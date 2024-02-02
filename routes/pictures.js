@@ -7,10 +7,11 @@ const s3 = new AWS.S3();
 const { requiresAuth } = require('express-openid-connect');
 
 router.get('/', requiresAuth(), async function(req, res, next) {
+    console.log(req.oidc.user);
     var params = {
         Bucket: process.env.CYCLIC_BUCKET_NAME,
         Delimiter: '/',
-        Prefix: 'public/'
+        Prefix: req.oidc.user.email + '/'
     };
     var allObjects = await s3.listObjects(params).promise();
     var keys = allObjects?.Contents.map(x=>x.Key);
@@ -28,8 +29,16 @@ router.get('/', requiresAuth(), async function(req, res, next) {
     res.render('pictures', { pictures: pictures });
 });
 
-router.get('/:fileName', requiresAuth(), function(req, res, next) {
-    res.render('pictureDetails', { picture: req.params.fileName });
+router.get('/:fileName', requiresAuth(), async function(req, res, next) {
+    let my_file = await s3.getObject({
+        Bucket: process.env.CYCLIC_BUCKET_NAME,
+        Key: "public/" + req.params.fileName
+    }).promise();
+    const picture = {
+        src: Buffer.from(my_file.Body).toString('base64'),
+        name: req.params.fileName
+    }
+    res.render('pictureDetails', { picture: picture });
 })
 
 router.post('/', requiresAuth(), async function(req, res, next) {
@@ -38,7 +47,7 @@ router.post('/', requiresAuth(), async function(req, res, next) {
     await s3.putObject({
         Body: file.data,
         Bucket: process.env.CYCLIC_BUCKET_NAME,
-        Key: "public/" + file.name,
+        Key: req.oidc.user.email + "/" + file.name,
     }).promise();
     //fs.writeFileSync(path.join(__dirname, '../pictures/', file.name), file.data);
     res.end();
